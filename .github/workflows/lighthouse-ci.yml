@@ -1,0 +1,74 @@
+name: Lighthouse CI - Análise de Acessibilidade
+
+on:
+  # Executar manualmente
+  workflow_dispatch:
+
+  # Executar em schedule (opcional - uma vez por semana)
+  # schedule:
+  #   - cron: '0 0 * * 0' # Todo domingo à meia-noite
+
+  # Executar em push/PR (opcional)
+  # push:
+  #   branches: [ main ]
+  # pull_request:
+  #   branches: [ main ]
+
+jobs:
+  lighthouse-analysis:
+    runs-on: ubuntu-latest
+
+    # Timeout de 6 horas
+    timeout-minutes: 360
+
+    steps:
+      - name: 🔄 Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: 🟢 Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: 📦 Instalar dependências
+        run: |
+          npm install --save-dev \
+            node-fetch@2 \
+            csv-parser \
+            csv-writer \
+            @lhci/cli@0.13.x
+
+      - name: 🚀 Executar Lighthouse CI Runner
+        env:
+          TOKEN_1: ${{ secrets.GITHUB_TOKEN }}
+          TOKEN_2: ${{ secrets.TOKEN_2 }}
+          TOKEN_3: ${{ secrets.TOKEN_3 }}
+        run: node lighthouse-ci-runner.js
+        continue-on-error: true
+
+      - name: 📊 Upload dos resultados (CSV)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-ci-results-csv
+          path: lighthouse_ci_results.csv
+          retention-days: 90
+
+      - name: 📊 Upload dos resultados (JSON)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-ci-results-json
+          path: lighthouse_ci_results.json
+          retention-days: 90
+
+      - name: 📈 Commit dos resultados (opcional)
+        if: success()
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add lighthouse_ci_results.csv lighthouse_ci_results.json || true
+          git commit -m "📊 Atualizar resultados Lighthouse CI [skip ci]" || true
+          git push || true
+        continue-on-error: true

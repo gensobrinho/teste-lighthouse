@@ -1,0 +1,37 @@
+{
+  "name": "github-accessibility-analyzer",
+  "version": "1.0.0",
+  "description": "Sistema de mineração e análise de acessibilidade em repositórios GitHub",
+  "main": "script.js",
+  "scripts": {
+    "miner": "node script.js",
+    "lighthouse": "node lighthouse-ci-runner.js",
+    "tests": "node run-tests.js",
+    "start": "node script.js"
+  },
+  "keywords": [
+    "accessibility",
+    "a11y",
+    "lighthouse",
+    "axe",
+    "wcag",
+    "github",
+    "mining",
+    "tcc"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "node-fetch": "^2.7.0",
+    "csv-parser": "^3.0.0",
+    "csv-writer": "^1.6.0",
+    "axe-core": "^4.10.2",
+    "puppeteer": "^23.9.0"
+  },
+  "devDependencies": {
+    "@lhci/cli": "^0.13.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
