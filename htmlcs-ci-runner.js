@@ -85,10 +85,15 @@ async function runHTMLCS(url, htmlcsScript, standard = CONFIG.WCAG_STANDARD, ret
             const messages = [];
             
             const callback = (msg) => {
+              // Valida se a mensagem existe e tem propriedades válidas
+              if (!msg || typeof msg.type === 'undefined') {
+                return; // Ignora mensagens inválidas
+              }
+              
               messages.push({
                 type: msg.type,
-                code: msg.code,
-                message: msg.msg,
+                code: msg.code || 'unknown',
+                message: msg.msg || '',
                 element: msg.element ? msg.element.tagName : 'unknown'
               });
             };
