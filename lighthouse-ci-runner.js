@@ -3,7 +3,9 @@ const fetch = require("node-fetch");
 const { execSync } = require("child_process");
 const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 const csv = require("csv-parser");
-const Sitemapper = require("sitemapper").default;
+
+// Sitemapper precisa de import dinâmico (ES Module)
+let Sitemapper;
 
 /**
  * Lighthouse CI Runner para Análise de Acessibilidade
@@ -96,150 +98,6 @@ async function loadWCAGLevels() {
 }
 
 // ----------------------
-// Configuração de Tokens GitHub
-// ----------------------
-const tokens = [
-  process.env.TOKEN_1,
-  process.env.TOKEN_2,
-  process.env.TOKEN_3,
-].filter(Boolean);
-
-let tokenIndex = 0;
-let token = tokens[0];
-let tokenLimits = Array(tokens.length).fill(null);
-
-console.log(`🔑 Tokens configurados: ${tokens.length}`);
-tokens.forEach((t, i) => {
-  const masked = t ? `${t.substring(0, 7)}...${t.substring(t.length - 4)}` : "não definido";
-  console.log(`   Token ${i + 1}: ${masked}`);
-});
-
-function nextToken() {
-  tokenIndex = (tokenIndex + 1) % tokens.length;
-  token = tokens[tokenIndex];
-}
-
-function switchTokenIfNeeded(rateLimit) {
-  if (rateLimit !== null && rateLimit <= 0) {
-    let startIndex = tokenIndex;
-    let found = false;
-    for (let i = 1; i <= tokens.length; i++) {
-      let nextIndex = (startIndex + i) % tokens.length;
-      if (!tokenLimits[nextIndex] || tokenLimits[nextIndex] > 0) {
-        tokenIndex = nextIndex;
-        token = tokens[tokenIndex];
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      console.log(
-        "⏳ Todos os tokens atingiram o rate limit. Aguardando reset..."
-      );
-    }
-  }
-}
-
-async function makeRestRequest(url) {
-  const options = {
-    headers: {
-      "User-Agent": "Lighthouse-CI-Runner",
-      Accept: "application/vnd.github.v3+json",
-      Authorization: `token ${token}`,
-    },
-    timeout: 10000, // Reduzido para 10s
-  };
-
-  const response = await fetch(url, options);
-  
-  // Verifica status HTTP
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(
-      `HTTP ${response.status} ${response.statusText} - ${errorBody.substring(0, 200)}`
-    );
-  }
-
-  const rateLimit = parseInt(response.headers.get("x-ratelimit-remaining"));
-  const resetTime = parseInt(response.headers.get("x-ratelimit-reset"));
-  tokenLimits[tokenIndex] = rateLimit;
-
-  // Log de rate limit a cada 10 requests
-  if (rateLimit % 100 === 0) {
-    console.log(`   ℹ️  Rate limit restante: ${rateLimit} requests`);
-  }
-
-  if (rateLimit < 50 && tokens.length > 1) {
-    nextToken();
-    tokenLimits[tokenIndex] = null;
-    console.log(
-      `🔄 Trocando para o próximo token (REST), rate limit baixo: ${rateLimit}`
-    );
-  }
-
-  switchTokenIfNeeded(rateLimit);
-
-  if (rateLimit < 50 && tokens.length <= 1) {
-    const waitTime = Math.max(resetTime * 1000 - Date.now() + 5000, 0);
-    console.log(
-      `⏳ Rate limit REST baixo (${rateLimit}), aguardando ${Math.ceil(
-        waitTime / 1000
-      )}s...`
-    );
-    await new Promise((resolve) => setTimeout(resolve, waitTime));
-  }
-
-  return await response.json();
-}
-
-// ----------------------
-// Buscar Homepage via GitHub API
-// ----------------------
-async function getHomepage(repoFullName) {
-  try {
-    console.log(`🔍 Buscando homepage para ${repoFullName}`);
-    const data = await makeRestRequest(
-      `https://api.github.com/repos/${repoFullName}`
-    );
-    
-    // Validação adicional
-    if (!data) {
-      console.log(`   ⚠️  Resposta vazia da API`);
-      return null;
-    }
-    
-    // Log detalhado para debugging
-    if (data.homepage) {
-      console.log(`   ✅ Homepage: ${data.homepage}`);
-    } else {
-      console.log(`   ℹ️  Campo 'homepage' vazio ou não configurado`);
-      
-      // Tenta buscar no description ou topics
-      if (data.description && data.description.includes("http")) {
-        const urlMatch = data.description.match(/https?:\/\/[^\s]+/);
-        if (urlMatch) {
-          console.log(`   💡 URL encontrada na descrição: ${urlMatch[0]}`);
-          // Não usar automaticamente, apenas informar
-        }
-      }
-    }
-    
-    return data.homepage || null;
-  } catch (err) {
-    console.error(`❌ Erro ao buscar homepage: ${err.message}`);
-    
-    // Log adicional para erros comuns
-    if (err.message.includes("404")) {
-      console.error(`   ℹ️  Repositório não encontrado ou privado`);
-    } else if (err.message.includes("403")) {
-      console.error(`   ℹ️  Acesso negado - verifique permissões do token`);
-    } else if (err.message.includes("401")) {
-      console.error(`   ℹ️  Token inválido ou expirado`);
-    }
-    
-    return null;
-  }
-}
 
 // ----------------------
 // Buscar URLs do Sitemap
@@ -247,6 +105,18 @@ async function getHomepage(repoFullName) {
 async function getSitemapUrls(baseUrl) {
   if (!CONFIG.USE_SITEMAP) {
     return [baseUrl];
+  }
+
+  // Carrega Sitemapper dinamicamente (ES Module)
+  if (!Sitemapper) {
+    try {
+      const sitemapperModule = await import("sitemapper");
+      Sitemapper = sitemapperModule.default;
+    } catch (err) {
+      console.log(`   ⚠️  Erro ao carregar Sitemapper: ${err.message}`);
+      console.log(`   ℹ️  Continuando sem busca de sitemap...`);
+      return [baseUrl];
+    }
   }
 
   // Normaliza a URL base (garante que termine com /)
@@ -469,30 +339,46 @@ async function runLighthouseCI(url, repoName) {
 }
 
 // ----------------------
-// Ler CSV de Repositórios
+// Ler CSV de Repositórios com Homepage
 // ----------------------
 async function readRepositories() {
+  const csvFile = "repositorios_com_homepage.csv";
+  
+  // Verifica se o arquivo existe
+  if (!fs.existsSync(csvFile)) {
+    console.error(`❌ ERRO: Arquivo ${csvFile} não encontrado!`);
+    console.error("");
+    console.error("   Execute primeiro:");
+    console.error("   $ npm run extract-homepages");
+    console.error("");
+    console.error("   Isso irá gerar o CSV com os repositórios e suas URLs.");
+    console.error("");
+    process.exit(1);
+  }
+  
+  console.log(`📂 Lendo arquivo: ${csvFile}`);
+  console.log(`   ✅ Usando CSV com URLs pré-carregadas (sem chamadas à API)`);
+  
   return new Promise((resolve, reject) => {
     const repos = [];
-    fs.createReadStream("filtrados.csv")
+    fs.createReadStream(csvFile)
       .pipe(csv())
       .on("data", (row) => {
-        repos.push({
-          repositorio: row["Repositório"] || row["Repositorio"],
-          estrelas: row["Número de Estrelas"] || row["Numero de Estrelas"],
-          ultimoCommit: row["Último Commit"] || row["Ultimo Commit"],
-          axe: row["AXE"],
-          pa11y: row["Pa11y"],
-          wave: row["WAVE"],
-          achecker: row["AChecker"],
-          lighthouse: row["Lighthouse"],
-          asqatasun: row["Asqatasun"],
-          htmlCodeSniffer: row["HTML_CodeSniffer"],
-          aplicacaoWeb: row["AplicacaoWeb"],
-        });
+        const repositorio = row["Repositorio"] || row["Repositório"];
+        const homepage = row["Homepage"];
+        
+        // Só adiciona repos que TÊM homepage
+        if (repositorio && homepage && homepage.trim() !== "") {
+          repos.push({
+            repositorio: repositorio.trim(),
+            homepage: homepage.trim(),
+          });
+        }
       })
       .on("end", () => {
-        console.log(`📋 Carregados ${repos.length} repositórios do CSV`);
+        console.log(`📋 Carregados ${repos.length} repositórios com homepage`);
+        console.log(`   ✅ Todos prontos para análise!`);
+        console.log("");
         resolve(repos);
       })
       .on("error", reject);
@@ -559,44 +445,12 @@ async function saveResults(results) {
 
   for (const repo of repos) {
     console.log(`\n${"=".repeat(80)}`);
-    console.log(`📦 Processando: ${repo.repositorio} (⭐ ${repo.estrelas})`);
+    console.log(`📦 Repositório: ${repo.repositorio}`);
+    console.log(`🌐 Homepage: ${repo.homepage}`);
     console.log(`${"=".repeat(80)}`);
 
-    // Buscar homepage
-    const homepage = await getHomepage(repo.repositorio);
-
-    if (!homepage) {
-      console.log(`⏭️  Pulando - sem homepage configurada`);
-      totalPulados++;
-      results.push({
-        repositorio: repo.repositorio,
-        homepage: null,
-        urls_analisadas: 0,
-        urls_sucesso: 0,
-        status: "SKIPPED_NO_HOMEPAGE",
-        score: null,
-        scoreDisplay: null,
-        violacoes: null,
-        warnings: null,
-        nivelA: null,
-        nivelAA: null,
-        nivelAAA: null,
-        bestPractice: null,
-        experimental: null,
-        deprecated: null,
-        indefinido: null,
-        performance: null,
-        bestPractices: null,
-        seo: null,
-        detalhes: null,
-      });
-      continue;
-    }
-
-    console.log(`🌐 Homepage encontrada: ${homepage}`);
-
     // Buscar URLs do sitemap
-    const urlsToAnalyze = await getSitemapUrls(homepage);
+    const urlsToAnalyze = await getSitemapUrls(repo.homepage);
 
     // Executar Lighthouse CI em cada URL
     const urlResults = [];
@@ -645,7 +499,7 @@ async function saveResults(results) {
       totalErros++;
       results.push({
         repositorio: repo.repositorio,
-        homepage: homepage,
+        homepage: repo.homepage,
         urls_analisadas: urlsToAnalyze.length,
         urls_sucesso: 0,
         status: "ERROR",
@@ -718,7 +572,7 @@ async function saveResults(results) {
     totalRodados++;
     results.push({
       repositorio: repo.repositorio,
-      homepage: homepage,
+      homepage: repo.homepage,
       urls_analisadas: urlsToAnalyze.length,
       urls_sucesso: successCount,
       status: "SUCCESS",
