@@ -28,7 +28,7 @@ const WCAG_AUTOMATIZAVEL = Math.round(WCAG_TOTAL_CRITERIA * 0.44); // ~26 crité
 // ----------------------
 const CONFIG = {
   // Número máximo de URLs a analisar por repositório
-  MAX_URLS_PER_REPO: 5,
+  MAX_URLS_PER_REPO: 10,
   
   // Se true, tenta buscar URLs do sitemap
   USE_SITEMAP: true,
