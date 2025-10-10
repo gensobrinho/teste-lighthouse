@@ -1,18 +1,7 @@
 name: Lighthouse CI - Análise de Acessibilidade
 
 on:
-  # Executar manualmente
   workflow_dispatch:
-
-  # Executar em schedule (opcional - uma vez por semana)
-  # schedule:
-  #   - cron: '0 0 * * 0' # Todo domingo à meia-noite
-
-  # Executar em push/PR (opcional)
-  # push:
-  #   branches: [ main ]
-  # pull_request:
-  #   branches: [ main ]
 
 jobs:
   lighthouse-analysis:
@@ -33,10 +22,11 @@ jobs:
 
       - name: 📦 Instalar dependências
         run: |
-          npm install --save-dev \
+          npm install \
             node-fetch@2 \
             csv-parser \
             csv-writer \
+            sitemapper \
             @lhci/cli@0.13.x
 
       - name: 🚀 Executar Lighthouse CI Runner
