@@ -1,0 +1,105 @@
+rule_id,conformity_level
+area-alt,A
+aria-allowed-attr,A
+aria-braille-equivalent,A
+aria-command-name,A
+aria-conditional-attr,A
+aria-deprecated-role,A
+aria-hidden-body,A
+aria-hidden-focus,A
+aria-input-field-name,A
+aria-meter-name,A
+aria-progressbar-name,A
+aria-prohibited-attr,A
+aria-required-attr,A
+aria-required-children,A
+aria-required-parent,A
+aria-roles,A
+aria-toggle-field-name,A
+aria-tooltip-name,A
+aria-valid-attr-value,A
+aria-valid-attr,A
+blink,A
+button-name,A
+bypass,A
+color-contrast,AA
+definition-list,A
+dlitem,A
+document-title,A
+duplicate-id-aria,A
+form-field-multiple-labels,A
+frame-focusable-content,A
+frame-title-unique,A
+frame-title,A
+html-has-lang,A
+html-lang-valid,A
+html-xml-lang-mismatch,A
+image-alt,A
+input-button-name,A
+input-image-alt,A
+label,A
+link-in-text-block,A
+link-name,A
+list,A
+listitem,A
+marquee,A
+meta-refresh,A
+meta-viewport,AA
+nested-interactive,A
+no-autoplay-audio,A
+object-alt,A
+role-img-alt,A
+scrollable-region-focusable,A
+select-name,A
+server-side-image-map,A
+summary-name,A
+svg-img-alt,A
+td-headers-attr,A
+th-has-data-cells,A
+valid-lang,AA
+video-caption,A
+autocomplete-valid,AA
+avoid-inline-spacing,AA
+target-size,AA
+accesskeys,Best Practice
+aria-allowed-role,Best Practice
+aria-dialog-name,Best Practice
+aria-text,Best Practice
+aria-treeitem-name,Best Practice
+empty-heading,Best Practice
+empty-table-header,Best Practice
+frame-tested,Best Practice
+heading-order,Best Practice
+image-redundant-alt,Best Practice
+label-title-only,Best Practice
+landmark-banner-is-top-level,Best Practice
+landmark-complementary-is-top-level,Best Practice
+landmark-contentinfo-is-top-level,Best Practice
+landmark-main-is-top-level,Best Practice
+landmark-no-duplicate-banner,Best Practice
+landmark-no-duplicate-contentinfo,Best Practice
+landmark-no-duplicate-main,Best Practice
+landmark-one-main,Best Practice
+landmark-unique,Best Practice
+meta-viewport-large,Best Practice
+page-has-heading-one,Best Practice
+presentation-role-conflict,Best Practice
+region,Best Practice
+scope-attr-valid,Best Practice
+skip-link,Best Practice
+tabindex,Best Practice
+table-duplicate-name,Best Practice
+color-contrast-enhanced,AAA
+identical-links-same-purpose,AAA
+meta-refresh-no-exceptions,AAA
+css-orientation-lock,Experimental
+focus-order-semantics,Experimental
+hidden-content,Experimental
+label-content-name-mismatch,Experimental
+p-as-heading,Experimental
+table-fake-caption,Experimental
+td-has-header,Experimental
+aria-roledescription,Deprecated
+audio-caption,Deprecated
+duplicate-id-active,Deprecated
+duplicate-id,Deprecated

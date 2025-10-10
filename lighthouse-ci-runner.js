@@ -11,17 +11,67 @@ const csv = require("csv-parser");
  * 1. Lê repositórios do filtrados.csv
  * 2. Busca homepage via GitHub API
  * 3. Executa Lighthouse CI focado em acessibilidade
- * 4. Salva resultados em CSV/JSON
+ * 4. Classifica violações por nível WCAG usando rule-wcag-levels.csv
+ * 5. Salva resultados em CSV/JSON
  */
+
+// ----------------------
+// Mapeamento de Regras WCAG
+// ----------------------
+let wcagLevels = {
+  A: [],
+  AA: [],
+  AAA: [],
+  "Best Practice": [],
+  Experimental: [],
+  Deprecated: [],
+  None: [],
+};
+
+// Função para carregar os níveis WCAG do CSV
+async function loadWCAGLevels() {
+  return new Promise((resolve, reject) => {
+    const levels = {
+      A: [],
+      AA: [],
+      AAA: [],
+      "Best Practice": [],
+      Experimental: [],
+      Deprecated: [],
+      None: [],
+    };
+
+    fs.createReadStream("rule-wcag-levels.csv")
+      .pipe(csv())
+      .on("data", (row) => {
+        const ruleId = row.rule_id;
+        const level = row.conformity_level;
+
+        if (levels[level]) {
+          levels[level].push(ruleId);
+        }
+      })
+      .on("end", () => {
+        console.log("📋 Níveis WCAG carregados:");
+        console.log(`   ✓ Nível A: ${levels.A.length} regras`);
+        console.log(`   ✓ Nível AA: ${levels.AA.length} regras`);
+        console.log(`   ✓ Nível AAA: ${levels.AAA.length} regras`);
+        console.log(
+          `   ✓ Best Practice: ${levels["Best Practice"].length} regras`
+        );
+        console.log(`   ✓ Experimental: ${levels.Experimental.length} regras`);
+        console.log(`   ✓ Deprecated: ${levels.Deprecated.length} regras`);
+        console.log("");
+        resolve(levels);
+      })
+      .on("error", reject);
+  });
+}
 
 // ----------------------
 // Configuração de Tokens GitHub
 // ----------------------
-const tokens = [
-  process.env.TOKEN_1,
-  process.env.TOKEN_2,
-  process.env.TOKEN_3,
-].filter(Boolean);
+const tokens = ["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"].filter(Boolean);
 
 let tokenIndex = 0;
 let token = tokens[0];
@@ -120,11 +170,12 @@ async function runLighthouseCI(url, repoName) {
       fs.mkdirSync(tempDir, { recursive: true });
     }
 
-    // Executa Lighthouse CI via CLI
-    // --collect: coleta as métricas
-    // --url: URL a ser testada
-    // --only-categories=accessibility: apenas acessibilidade
-    const command = `npx --yes @lhci/cli@0.13.x collect --url="${url}" --numberOfRuns=1 --settings.chromeFlags="--no-sandbox --headless --disable-gpu" --settings.onlyCategories=accessibility`;
+    // Copia o arquivo de configuração para o diretório temporário
+    fs.copyFileSync(".lighthouserc.js", `${tempDir}/.lighthouserc.js`);
+
+    // Executa Lighthouse CI via CLI usando o arquivo de configuração
+    // O .lighthouserc.js contém todas as configurações (numberOfRuns, chromeFlags, categories, etc)
+    const command = `npx --yes @lhci/cli@0.13.x collect --config=.lighthouserc.js --url="${url}"`;
 
     console.log(`   ⚙️  Executando: ${command}`);
     execSync(command, {
@@ -153,6 +204,9 @@ async function runLighthouseCI(url, repoName) {
     let nivelA = 0,
       nivelAA = 0,
       nivelAAA = 0,
+      bestPractice = 0,
+      experimental = 0,
+      deprecated = 0,
       indefinido = 0;
     let violacoes = [];
     let warnings = [];
@@ -169,14 +223,21 @@ async function runLighthouseCI(url, repoName) {
         // Classifica por severidade
         if (audit.score === 0) {
           violacoes.push(details);
+          console.log(audit);
 
-          // Classifica por nível WCAG baseado nas tags
-          if (audit.id.includes("2.1") || audit.id.includes("wcag2a")) {
+          // Classifica por nível WCAG usando o mapeamento do CSV
+          if (wcagLevels.A.includes(auditId)) {
             nivelA++;
-          } else if (audit.id.includes("2.2") || audit.id.includes("wcag2aa")) {
+          } else if (wcagLevels.AA.includes(auditId)) {
             nivelAA++;
-          } else if (audit.id.includes("wcag2aaa")) {
+          } else if (wcagLevels.AAA.includes(auditId)) {
             nivelAAA++;
+          } else if (wcagLevels["Best Practice"].includes(auditId)) {
+            bestPractice++;
+          } else if (wcagLevels.Experimental.includes(auditId)) {
+            experimental++;
+          } else if (wcagLevels.Deprecated.includes(auditId)) {
+            deprecated++;
           } else {
             indefinido++;
           }
@@ -197,6 +258,9 @@ async function runLighthouseCI(url, repoName) {
       nivelA,
       nivelAA,
       nivelAAA,
+      bestPractice,
+      experimental,
+      deprecated,
       indefinido,
       detalhesViolacoes: violacoes,
       detalhesWarnings: warnings,
@@ -262,6 +326,9 @@ async function saveResults(results) {
       { id: "nivelA", title: "Violacoes_Nivel_A" },
       { id: "nivelAA", title: "Violacoes_Nivel_AA" },
       { id: "nivelAAA", title: "Violacoes_Nivel_AAA" },
+      { id: "bestPractice", title: "Violacoes_Best_Practice" },
+      { id: "experimental", title: "Violacoes_Experimental" },
+      { id: "deprecated", title: "Violacoes_Deprecated" },
       { id: "indefinido", title: "Violacoes_Indefinido" },
       { id: "performance", title: "Performance_Score" },
       { id: "bestPractices", title: "Best_Practices_Score" },
@@ -287,6 +354,9 @@ async function saveResults(results) {
   console.log("🚀 LIGHTHOUSE CI RUNNER - ANÁLISE DE ACESSIBILIDADE");
   console.log(`🔑 Token configurado: ${token ? "✅" : "❌"}`);
   console.log("");
+
+  // Carregar mapeamento de níveis WCAG
+  wcagLevels = await loadWCAGLevels();
 
   const repos = await readRepositories();
   const results = [];
@@ -316,6 +386,9 @@ async function saveResults(results) {
         nivelA: null,
         nivelAA: null,
         nivelAAA: null,
+        bestPractice: null,
+        experimental: null,
+        deprecated: null,
         indefinido: null,
         performance: null,
         bestPractices: null,
@@ -344,6 +417,9 @@ async function saveResults(results) {
         nivelA: null,
         nivelAA: null,
         nivelAAA: null,
+        bestPractice: null,
+        experimental: null,
+        deprecated: null,
         indefinido: null,
         performance: null,
         bestPractices: null,
@@ -358,7 +434,10 @@ async function saveResults(results) {
     console.log(`   ❌ Violações: ${lhciResult.violacoes}`);
     console.log(`   ⚠️  Warnings: ${lhciResult.warnings}`);
     console.log(
-      `   📈 Nível A: ${lhciResult.nivelA} | AA: ${lhciResult.nivelAA} | AAA: ${lhciResult.nivelAAA}`
+      `   📈 WCAG - A: ${lhciResult.nivelA} | AA: ${lhciResult.nivelAA} | AAA: ${lhciResult.nivelAAA}`
+    );
+    console.log(
+      `   📋 Outras - Best Practice: ${lhciResult.bestPractice} | Experimental: ${lhciResult.experimental} | Deprecated: ${lhciResult.deprecated}`
     );
 
     totalRodados++;
@@ -373,6 +452,9 @@ async function saveResults(results) {
       nivelA: lhciResult.nivelA,
       nivelAA: lhciResult.nivelAA,
       nivelAAA: lhciResult.nivelAAA,
+      bestPractice: lhciResult.bestPractice,
+      experimental: lhciResult.experimental,
+      deprecated: lhciResult.deprecated,
       indefinido: lhciResult.indefinido,
       performance: (lhciResult.numericValues.performance * 100).toFixed(0),
       bestPractices: (lhciResult.numericValues.bestPractices * 100).toFixed(0),
