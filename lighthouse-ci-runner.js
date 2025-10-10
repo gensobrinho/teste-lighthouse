@@ -98,11 +98,21 @@ async function loadWCAGLevels() {
 // ----------------------
 // Configuração de Tokens GitHub
 // ----------------------
-const tokens = ["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"].filter(Boolean);
+const tokens = [
+  process.env.TOKEN_1,
+  process.env.TOKEN_2,
+  process.env.TOKEN_3,
+].filter(Boolean);
 
 let tokenIndex = 0;
 let token = tokens[0];
 let tokenLimits = Array(tokens.length).fill(null);
+
+console.log(`🔑 Tokens configurados: ${tokens.length}`);
+tokens.forEach((t, i) => {
+  const masked = t ? `${t.substring(0, 7)}...${t.substring(t.length - 4)}` : "não definido";
+  console.log(`   Token ${i + 1}: ${masked}`);
+});
 
 function nextToken() {
   tokenIndex = (tokenIndex + 1) % tokens.length;
@@ -137,13 +147,27 @@ async function makeRestRequest(url) {
       Accept: "application/vnd.github.v3+json",
       Authorization: `token ${token}`,
     },
-    timeout: 20000,
+    timeout: 10000, // Reduzido para 10s
   };
 
   const response = await fetch(url, options);
+  
+  // Verifica status HTTP
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(
+      `HTTP ${response.status} ${response.statusText} - ${errorBody.substring(0, 200)}`
+    );
+  }
+
   const rateLimit = parseInt(response.headers.get("x-ratelimit-remaining"));
   const resetTime = parseInt(response.headers.get("x-ratelimit-reset"));
   tokenLimits[tokenIndex] = rateLimit;
+
+  // Log de rate limit a cada 10 requests
+  if (rateLimit % 100 === 0) {
+    console.log(`   ℹ️  Rate limit restante: ${rateLimit} requests`);
+  }
 
   if (rateLimit < 50 && tokens.length > 1) {
     nextToken();
@@ -177,9 +201,42 @@ async function getHomepage(repoFullName) {
     const data = await makeRestRequest(
       `https://api.github.com/repos/${repoFullName}`
     );
+    
+    // Validação adicional
+    if (!data) {
+      console.log(`   ⚠️  Resposta vazia da API`);
+      return null;
+    }
+    
+    // Log detalhado para debugging
+    if (data.homepage) {
+      console.log(`   ✅ Homepage: ${data.homepage}`);
+    } else {
+      console.log(`   ℹ️  Campo 'homepage' vazio ou não configurado`);
+      
+      // Tenta buscar no description ou topics
+      if (data.description && data.description.includes("http")) {
+        const urlMatch = data.description.match(/https?:\/\/[^\s]+/);
+        if (urlMatch) {
+          console.log(`   💡 URL encontrada na descrição: ${urlMatch[0]}`);
+          // Não usar automaticamente, apenas informar
+        }
+      }
+    }
+    
     return data.homepage || null;
   } catch (err) {
     console.error(`❌ Erro ao buscar homepage: ${err.message}`);
+    
+    // Log adicional para erros comuns
+    if (err.message.includes("404")) {
+      console.error(`   ℹ️  Repositório não encontrado ou privado`);
+    } else if (err.message.includes("403")) {
+      console.error(`   ℹ️  Acesso negado - verifique permissões do token`);
+    } else if (err.message.includes("401")) {
+      console.error(`   ℹ️  Token inválido ou expirado`);
+    }
+    
     return null;
   }
 }
@@ -488,7 +545,7 @@ async function saveResults(results) {
 // ----------------------
 (async () => {
   console.log("🚀 LIGHTHOUSE CI RUNNER - ANÁLISE DE ACESSIBILIDADE");
-  console.log(`🔑 Token configurado: ${token ? "✅" : "❌"}`);
+  console.log("=".repeat(80));
   console.log("");
 
   // Carregar mapeamento de níveis WCAG
