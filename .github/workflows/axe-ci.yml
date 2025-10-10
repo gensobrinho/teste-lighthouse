@@ -1,0 +1,53 @@
+name: AXE CI - Análise de Acessibilidade
+
+on:
+  workflow_dispatch:
+
+jobs:
+  axe-analysis:
+    runs-on: ubuntu-latest
+
+    # Timeout de 6 horas
+    timeout-minutes: 360
+
+    steps:
+      - name: 🔄 Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: 🟢 Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: 📦 Instalar dependências
+        run: |
+          npm install \
+            axe-core \
+            puppeteer \
+            csv-parser \
+            csv-writer \
+            sitemapper
+
+      - name: 🚀 Executar AXE CI Runner
+        run: node axe-ci-runner.js
+        continue-on-error: true
+
+      - name: 📊 Upload dos resultados (CSV)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: axe-ci-results-csv
+          path: axe_ci_results.csv
+          retention-days: 90
+
+      - name: 📈 Commit dos resultados (opcional)
+        if: success()
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add axe_ci_results.csv || true
+          git commit -m "📊 Atualizar resultados AXE CI [skip ci]" || true
+          git push || true
+        continue-on-error: true
+

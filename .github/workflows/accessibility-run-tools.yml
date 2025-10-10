@@ -5,7 +5,7 @@ on:
   push:
     paths:
       - .github/workflows/accessibility-run-tools.yml
-      - run-tests.js
+      - axe-ci-runner.js
 
 jobs:
   run-tests:
@@ -37,18 +37,18 @@ jobs:
 
       - name: Install Node.js dependencies
         run: |
-          npm install axe-core puppeteer node-fetch@2 csv-writer
+          npm install \
+            axe-core \
+            puppeteer \
+            csv-parser \
+            csv-writer \
+            sitemapper
 
       - name: Run accessibility tests
-        env:
-          TOKEN_1: ${{ secrets.TOKEN_1 }}
-          TOKEN_2: ${{ secrets.TOKEN_2 }}
-          TOKEN_3: ${{ secrets.TOKEN_3 }}
-        run: |
-          node run-tests.js
+        run: node axe-ci-runner.js
 
       - name: Upload CSV results
         uses: actions/upload-artifact@v4
         with:
           name: accessibility-results
-          path: resultados_acessibilidade.csv
+          path: axe_ci_results.csv
