@@ -22,11 +22,12 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "node-fetch": "^2.7.0",
+    "axe-core": "^4.10.2",
     "csv-parser": "^3.0.0",
     "csv-writer": "^1.6.0",
-    "axe-core": "^4.10.2",
-    "puppeteer": "^23.9.0"
+    "node-fetch": "^2.7.0",
+    "puppeteer": "^23.9.0",
+    "sitemapper": "^4.0.2"
   },
   "devDependencies": {
     "@lhci/cli": "^0.13.0"

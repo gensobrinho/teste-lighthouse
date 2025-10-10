@@ -3,6 +3,7 @@ const fetch = require("node-fetch");
 const { execSync } = require("child_process");
 const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 const csv = require("csv-parser");
+const Sitemapper = require("sitemapper").default;
 
 /**
  * Lighthouse CI Runner para Análise de Acessibilidade
@@ -14,6 +15,32 @@ const csv = require("csv-parser");
  * 4. Classifica violações por nível WCAG usando rule-wcag-levels.csv
  * 5. Salva resultados em CSV/JSON
  */
+
+// ----------------------
+// Configurações
+// ----------------------
+const CONFIG = {
+  // Número máximo de URLs a analisar por repositório
+  MAX_URLS_PER_REPO: 10,
+
+  // Se true, tenta buscar URLs do sitemap
+  USE_SITEMAP: true,
+
+  // Se true, valida se URLs estão acessíveis antes de analisar
+  VALIDATE_URLS: true,
+
+  // Timeout para buscar sitemap (ms)
+  SITEMAP_TIMEOUT: 10000,
+
+  // Priorizar certas páginas (regex patterns)
+  PRIORITY_PATTERNS: [
+    /\/$/, // Homepage
+    /\/about/i, // Sobre
+    /\/contact/i, // Contato
+    /\/dashboard/i, // Dashboard
+    /\/login/i, // Login
+  ],
+};
 
 // ----------------------
 // Mapeamento de Regras WCAG
@@ -158,6 +185,114 @@ async function getHomepage(repoFullName) {
 }
 
 // ----------------------
+// Buscar URLs do Sitemap
+// ----------------------
+async function getSitemapUrls(baseUrl) {
+  if (!CONFIG.USE_SITEMAP) {
+    return [baseUrl];
+  }
+
+  // Normaliza a URL base (garante que termine com /)
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+
+  // Lista de locais comuns para sitemap
+  const sitemapLocations = [
+    `${normalizedBase}sitemap.xml`,
+    `${normalizedBase}sitemap_index.xml`,
+    `${normalizedBase}sitemap-index.xml`,
+    `${normalizedBase}sitemap1.xml`,
+    `${normalizedBase}wp-sitemap.xml`, // WordPress
+    `${normalizedBase}sitemap/sitemap.xml`,
+  ];
+
+  console.log(`🗺️  Buscando sitemap em: ${baseUrl}`);
+
+  // Tenta cada localização
+  for (const sitemapUrl of sitemapLocations) {
+    try {
+      console.log(`   🔍 Tentando: ${sitemapUrl}`);
+
+      const sitemap = new Sitemapper({
+        url: sitemapUrl,
+        timeout: CONFIG.SITEMAP_TIMEOUT,
+        requestHeaders: {
+          "User-Agent": "Lighthouse-CI-Runner/1.0",
+        },
+      });
+
+      const { sites } = await sitemap.fetch();
+
+      if (!sites || sites.length === 0) {
+        console.log(`      ⚠️  Sitemap vazio, tentando próximo...`);
+        continue; // Tenta próxima localização
+      }
+
+      console.log(`   ✅ Encontradas ${sites.length} URLs no sitemap`);
+
+      // Prioriza URLs importantes
+      const sortedUrls = sites.sort((a, b) => {
+        const scoreA = CONFIG.PRIORITY_PATTERNS.reduce(
+          (score, pattern) => score + (pattern.test(a) ? 1 : 0),
+          0
+        );
+        const scoreB = CONFIG.PRIORITY_PATTERNS.reduce(
+          (score, pattern) => score + (pattern.test(b) ? 1 : 0),
+          0
+        );
+        return scoreB - scoreA;
+      });
+
+      // Garante que a homepage está incluída
+      const selectedUrls = [baseUrl];
+
+      // Adiciona outras URLs até o limite
+      for (const url of sortedUrls) {
+        if (selectedUrls.length >= CONFIG.MAX_URLS_PER_REPO) break;
+        if (!selectedUrls.includes(url)) {
+          selectedUrls.push(url);
+        }
+      }
+
+      console.log(
+        `   ✅ Selecionadas ${selectedUrls.length} URLs para análise`
+      );
+      selectedUrls.forEach((url, i) => {
+        console.log(`      ${i + 1}. ${url}`);
+      });
+
+      return selectedUrls; // Sucesso! Retorna as URLs
+    } catch (err) {
+      console.log(`      ⚠️  ${err.message}`);
+      // Continua para próxima localização
+    }
+  }
+
+  // Se chegou aqui, nenhum sitemap foi encontrado
+  console.log(`   ℹ️  Nenhum sitemap encontrado, usando apenas homepage`);
+  return [baseUrl];
+}
+
+// ----------------------
+// Validar se URL está acessível
+// ----------------------
+async function isUrlAccessible(url) {
+  try {
+    const response = await fetch(url, {
+      method: "HEAD", // Apenas cabeçalhos, não baixa o corpo
+      timeout: 10000,
+      headers: {
+        "User-Agent": "Lighthouse-CI-Runner/1.0",
+      },
+    });
+
+    // Considera sucesso: 200-399 (inclui redirects)
+    return response.status >= 200 && response.status < 400;
+  } catch (err) {
+    return false;
+  }
+}
+
+// ----------------------
 // Executar Lighthouse CI
 // ----------------------
 async function runLighthouseCI(url, repoName) {
@@ -223,7 +358,6 @@ async function runLighthouseCI(url, repoName) {
         // Classifica por severidade
         if (audit.score === 0) {
           violacoes.push(details);
-          console.log(audit);
 
           // Classifica por nível WCAG usando o mapeamento do CSV
           if (wcagLevels.A.includes(auditId)) {
@@ -318,6 +452,8 @@ async function saveResults(results) {
     header: [
       { id: "repositorio", title: "Repositorio" },
       { id: "homepage", title: "Homepage" },
+      { id: "urls_analisadas", title: "URLs_Analisadas" },
+      { id: "urls_sucesso", title: "URLs_Sucesso" },
       { id: "status", title: "Status" },
       { id: "score", title: "Score_Acessibilidade" },
       { id: "scoreDisplay", title: "Score_Display" },
@@ -378,6 +514,8 @@ async function saveResults(results) {
       results.push({
         repositorio: repo.repositorio,
         homepage: null,
+        urls_analisadas: 0,
+        urls_sucesso: 0,
         status: "SKIPPED_NO_HOMEPAGE",
         score: null,
         scoreDisplay: null,
@@ -400,15 +538,59 @@ async function saveResults(results) {
 
     console.log(`🌐 Homepage encontrada: ${homepage}`);
 
-    // Executar Lighthouse CI
-    const lhciResult = await runLighthouseCI(homepage, repo.repositorio);
+    // Buscar URLs do sitemap
+    const urlsToAnalyze = await getSitemapUrls(homepage);
 
-    if (!lhciResult) {
-      console.log(`❌ Falha ao executar Lighthouse CI`);
+    // Executar Lighthouse CI em cada URL
+    const urlResults = [];
+    let successCount = 0;
+
+    for (let i = 0; i < urlsToAnalyze.length; i++) {
+      const url = urlsToAnalyze[i];
+      console.log(
+        `\n   📄 [${i + 1}/${urlsToAnalyze.length}] Analisando: ${url}`
+      );
+
+      // Valida se a URL está acessível antes de rodar Lighthouse (se habilitado)
+      if (CONFIG.VALIDATE_URLS) {
+        console.log(`      🔍 Verificando se URL está acessível...`);
+        const isAccessible = await isUrlAccessible(url);
+
+        if (!isAccessible) {
+          console.log(`      ⚠️  URL não acessível (404 ou erro), pulando...`);
+          continue; // Pula para próxima URL
+        }
+
+        console.log(`      ✓ URL acessível, iniciando análise...`);
+      }
+      const lhciResult = await runLighthouseCI(
+        url,
+        `${repo.repositorio.replace(/\//g, "_")}_${i}`
+      );
+
+      if (lhciResult) {
+        urlResults.push({ url, ...lhciResult });
+        successCount++;
+        console.log(
+          `      ✓ Score: ${lhciResult.scoreDisplay}/100 | Violações: ${lhciResult.violacoes}`
+        );
+      } else {
+        console.log(`      ✗ Falha na análise`);
+      }
+
+      // Pausa entre URLs
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+
+    // Verifica se houve algum sucesso
+    if (urlResults.length === 0) {
+      console.log(`\n❌ Falha ao executar Lighthouse CI em todas as URLs`);
       totalErros++;
       results.push({
         repositorio: repo.repositorio,
         homepage: homepage,
+        urls_analisadas: urlsToAnalyze.length,
+        urls_sucesso: 0,
         status: "ERROR",
         score: null,
         scoreDisplay: null,
@@ -429,39 +611,78 @@ async function saveResults(results) {
       continue;
     }
 
-    console.log(`✅ Análise concluída:`);
-    console.log(`   📊 Score: ${lhciResult.scoreDisplay}/100`);
-    console.log(`   ❌ Violações: ${lhciResult.violacoes}`);
-    console.log(`   ⚠️  Warnings: ${lhciResult.warnings}`);
+    // Agregar resultados (pior score, soma de violações)
+    const aggregatedResult = {
+      score: Math.min(...urlResults.map((r) => r.score)),
+      scoreDisplay: Math.min(
+        ...urlResults.map((r) => parseFloat(r.scoreDisplay))
+      ).toFixed(0),
+      violacoes: urlResults.reduce((sum, r) => sum + r.violacoes, 0),
+      warnings: urlResults.reduce((sum, r) => sum + r.warnings, 0),
+      nivelA: urlResults.reduce((sum, r) => sum + r.nivelA, 0),
+      nivelAA: urlResults.reduce((sum, r) => sum + r.nivelAA, 0),
+      nivelAAA: urlResults.reduce((sum, r) => sum + r.nivelAAA, 0),
+      bestPractice: urlResults.reduce((sum, r) => sum + r.bestPractice, 0),
+      experimental: urlResults.reduce((sum, r) => sum + r.experimental, 0),
+      deprecated: urlResults.reduce((sum, r) => sum + r.deprecated, 0),
+      indefinido: urlResults.reduce((sum, r) => sum + r.indefinido, 0),
+      performance: (
+        (urlResults.reduce((sum, r) => sum + r.numericValues.performance, 0) /
+          urlResults.length) *
+        100
+      ).toFixed(0),
+      bestPractices: (
+        (urlResults.reduce((sum, r) => sum + r.numericValues.bestPractices, 0) /
+          urlResults.length) *
+        100
+      ).toFixed(0),
+      seo: (
+        (urlResults.reduce((sum, r) => sum + r.numericValues.seo, 0) /
+          urlResults.length) *
+        100
+      ).toFixed(0),
+      detalhesViolacoes: urlResults.flatMap((r) => r.detalhesViolacoes),
+      detalhesWarnings: urlResults.flatMap((r) => r.detalhesWarnings),
+    };
+
     console.log(
-      `   📈 WCAG - A: ${lhciResult.nivelA} | AA: ${lhciResult.nivelAA} | AAA: ${lhciResult.nivelAAA}`
+      `\n✅ Análise agregada concluída (${successCount}/${urlsToAnalyze.length} URLs):`
+    );
+    console.log(`   📊 Score (pior): ${aggregatedResult.scoreDisplay}/100`);
+    console.log(`   ❌ Violações (total): ${aggregatedResult.violacoes}`);
+    console.log(`   ⚠️  Warnings (total): ${aggregatedResult.warnings}`);
+    console.log(
+      `   📈 WCAG - A: ${aggregatedResult.nivelA} | AA: ${aggregatedResult.nivelAA} | AAA: ${aggregatedResult.nivelAAA}`
     );
     console.log(
-      `   📋 Outras - Best Practice: ${lhciResult.bestPractice} | Experimental: ${lhciResult.experimental} | Deprecated: ${lhciResult.deprecated}`
+      `   📋 Outras - Best Practice: ${aggregatedResult.bestPractice} | Experimental: ${aggregatedResult.experimental} | Deprecated: ${aggregatedResult.deprecated}`
     );
 
     totalRodados++;
     results.push({
       repositorio: repo.repositorio,
       homepage: homepage,
+      urls_analisadas: urlsToAnalyze.length,
+      urls_sucesso: successCount,
       status: "SUCCESS",
-      score: lhciResult.score,
-      scoreDisplay: lhciResult.scoreDisplay,
-      violacoes: lhciResult.violacoes,
-      warnings: lhciResult.warnings,
-      nivelA: lhciResult.nivelA,
-      nivelAA: lhciResult.nivelAA,
-      nivelAAA: lhciResult.nivelAAA,
-      bestPractice: lhciResult.bestPractice,
-      experimental: lhciResult.experimental,
-      deprecated: lhciResult.deprecated,
-      indefinido: lhciResult.indefinido,
-      performance: (lhciResult.numericValues.performance * 100).toFixed(0),
-      bestPractices: (lhciResult.numericValues.bestPractices * 100).toFixed(0),
-      seo: (lhciResult.numericValues.seo * 100).toFixed(0),
+      score: aggregatedResult.score,
+      scoreDisplay: aggregatedResult.scoreDisplay,
+      violacoes: aggregatedResult.violacoes,
+      warnings: aggregatedResult.warnings,
+      nivelA: aggregatedResult.nivelA,
+      nivelAA: aggregatedResult.nivelAA,
+      nivelAAA: aggregatedResult.nivelAAA,
+      bestPractice: aggregatedResult.bestPractice,
+      experimental: aggregatedResult.experimental,
+      deprecated: aggregatedResult.deprecated,
+      indefinido: aggregatedResult.indefinido,
+      performance: aggregatedResult.performance,
+      bestPractices: aggregatedResult.bestPractices,
+      seo: aggregatedResult.seo,
       detalhes: {
-        violacoes: lhciResult.detalhesViolacoes,
-        warnings: lhciResult.detalhesWarnings,
+        urls: urlResults.map((r) => r.url),
+        violacoes: aggregatedResult.detalhesViolacoes,
+        warnings: aggregatedResult.detalhesWarnings,
       },
     });
 
