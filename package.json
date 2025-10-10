@@ -7,6 +7,7 @@
     "miner": "node script.js",
     "lighthouse": "node lighthouse-ci-runner.js",
     "axe": "node axe-ci-runner.js",
+    "pa11y": "node pa11y-ci-runner.js",
     "tests": "node axe-ci-runner.js",
     "extract-homepages": "node extract-homepages.js",
     "start": "node script.js"
@@ -28,6 +29,7 @@
     "csv-parser": "^3.0.0",
     "csv-writer": "^1.6.0",
     "node-fetch": "^2.7.0",
+    "pa11y": "^6.2.3",
     "puppeteer": "^23.9.0",
     "sitemapper": "^4.0.2"
   },

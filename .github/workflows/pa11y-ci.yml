@@ -1,0 +1,52 @@
+name: Pa11y CI - Análise de Acessibilidade (HTML_CodeSniffer)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  htmlcs-analysis:
+    runs-on: ubuntu-latest
+
+    # Timeout de 6 horas
+    timeout-minutes: 360
+
+    steps:
+      - name: 🔄 Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: 🟢 Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: 📦 Instalar dependências
+        run: |
+          npm install \
+            pa11y \
+            csv-parser \
+            csv-writer \
+            sitemapper
+
+      - name: 🚀 Executar Pa11y Runner (HTML_CodeSniffer)
+        run: node htmlcs-ci-runner.js
+        continue-on-error: true
+
+      - name: 📊 Upload dos resultados (CSV)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: htmlcs-ci-results-csv
+          path: htmlcs_ci_results.csv
+          retention-days: 90
+
+      - name: 📈 Commit dos resultados (opcional)
+        if: success()
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add htmlcs_ci_results.csv || true
+          git commit -m "📊 Atualizar resultados Pa11y CI [skip ci]" || true
+          git push || true
+        continue-on-error: true
+
