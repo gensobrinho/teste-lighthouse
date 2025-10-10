@@ -16,8 +16,21 @@ let Sitemapper;
 * Este script testa conformidade com WCAG 2.1 níveis A, AA e AAA
 */
 
-const WCAG_TOTAL_CRITERIA = 78;
-const WCAG_AUTOMATIZAVEL = Math.round(WCAG_TOTAL_CRITERIA * 0.44); // ~34 critérios
+/**
+* NOTA: Métricas de Cobertura WCAG foram removidas devido a inconsistências metodológicas.
+* 
+* PROBLEMA IDENTIFICADO:
+* - Ferramentas testam múltiplas versões WCAG simultaneamente (2.0, 2.1, 2.2)
+* - Difícil determinar denominador correto (61, 78 ou 86 critérios?)
+* - Taxa de cobertura pode estar inflada ou deflada dependendo da versão
+* 
+* MÉTRICAS REMOVIDAS:
+* - WCAG_CriteriosTotal: Total de critérios WCAG (problemático por versão mista)
+* - CriteriosTestados: Critérios únicos testados pela ferramenta
+* - TaxaCobertura: Porcentagem de cobertura sobre o padrão WCAG
+* 
+* Para detalhes de implementação futura, consulte os comentários em axe-ci-runner.js
+*/
 
 // ----------------------
 // Configurações
@@ -251,8 +264,6 @@ async function saveCsv(results) {
       { id: 'errors_AA', title: 'ErrorsAA' },
       { id: 'errors_AAA', title: 'ErrorsAAA' },
       { id: 'errors_indefinido', title: 'ErrorsIndefinido' },
-      { id: 'criterios_total', title: 'WCAG_CriteriosTotal' },
-      { id: 'criterios_automatizaveis', title: 'WCAG_CriteriosAutomatizaveis' },
       { id: 'taxa_sucesso_acessibilidade', title: 'TaxaSucessoAcessibilidade' }
     ]
   });
@@ -323,8 +334,6 @@ async function saveCsv(results) {
         errors_AA: null,
         errors_AAA: null,
         errors_indefinido: null,
-        criterios_total: WCAG_TOTAL_CRITERIA,
-        criterios_automatizaveis: WCAG_AUTOMATIZAVEL,
         taxa_sucesso_acessibilidade: null
       });
       continue;
@@ -349,6 +358,12 @@ async function saveCsv(results) {
 
     totalRodados++;
 
+    // Calcula taxa de sucesso simples (inverso da densidade de erros)
+    const totalChecks = aggregatedResult.errors + aggregatedResult.warnings;
+    const taxaSucesso = totalChecks > 0 
+      ? (1 - (aggregatedResult.errors / totalChecks)).toFixed(4)
+      : 1.0000;
+
     results.push({
       repositorio: repo.repositorio,
       homepage: repo.homepage,
@@ -362,9 +377,7 @@ async function saveCsv(results) {
       errors_AA: aggregatedResult.nivelAA,
       errors_AAA: aggregatedResult.nivelAAA,
       errors_indefinido: aggregatedResult.indefinido,
-      criterios_total: WCAG_TOTAL_CRITERIA,
-      criterios_automatizaveis: WCAG_AUTOMATIZAVEL,
-      taxa_sucesso_acessibilidade: ((WCAG_AUTOMATIZAVEL - aggregatedResult.errors) / WCAG_AUTOMATIZAVEL).toFixed(2)
+      taxa_sucesso_acessibilidade: taxaSucesso
     });
 
     // Pausa entre repositórios

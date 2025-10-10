@@ -7,21 +7,31 @@ const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 let Sitemapper;
 
 /**
-* WCAG 2.2 - Total de critérios de sucesso
-* Fonte: W3C Web Content Accessibility Guidelines (WCAG) 2.2
-* https://www.w3.org/WAI/standards-guidelines/wcag/
-*
-* Total de critérios WCAG 2.2 = 58
-*
-* Cobertura automatizável (~44%) segundo Abu Doush et al. (2023):
-* "apenas cerca de 44% dos critérios de acessibilidade estabelecidos pela WCAG 2.1
-* podem ser totalmente automatizados com tecnologias padrão"
-*
-* Esse fator é mantido para WCAG 2.2 por similaridade, mas idealmente deveria ser recalculado
-* com base em um mapeamento atualizado dos critérios 2.2.
+* NOTA: Métricas de Cobertura WCAG foram removidas devido a inconsistências metodológicas.
+* 
+* PROBLEMA IDENTIFICADO:
+* - Ferramentas testam múltiplas versões WCAG simultaneamente (2.0, 2.1, 2.2)
+* - Difícil determinar denominador correto (61, 78 ou 86 critérios?)
+* - Taxa de cobertura pode estar inflada ou deflada dependendo da versão
+* 
+* MÉTRICAS REMOVIDAS:
+* - WCAG_CriteriosTotal: Total de critérios WCAG (problemático por versão mista)
+* - CriteriosTestados: Critérios únicos testados pela ferramenta
+* - TaxaCobertura: Porcentagem de cobertura sobre o padrão WCAG
+* 
+* IMPLEMENTAÇÃO FUTURA (se necessário):
+* 1. Detectar dinamicamente a versão WCAG máxima testada
+* 2. Usar denominador apropriado por versão:
+*    - WCAG 2.0: 61 critérios
+*    - WCAG 2.1: 78 critérios  
+*    - WCAG 2.2: 86 critérios
+* 3. Ou usar 86 como denominador universal para consistência
+* 
+* REFERÊNCIA (não usada, removida por ser problemática):
+* Abu Doush et al. (2023): "~44% dos critérios WCAG 2.1 podem ser totalmente automatizados"
+* - Porém, essa porcentagem varia por ferramenta e versão WCAG
+* - Comparação direta não é cientificamente válida sem ajustes
 */
-const WCAG_TOTAL_CRITERIA = 58;
-const WCAG_AUTOMATIZAVEL = Math.round(WCAG_TOTAL_CRITERIA * 0.44); // ~26 critérios
 
 // ----------------------
 // Configurações
@@ -234,9 +244,6 @@ const csvWriter = createCsvWriter({
     { id: 'violacoes_AA', title: 'ViolacoesAA' },
     { id: 'violacoes_AAA', title: 'ViolacoesAAA' },
     { id: 'violacoes_indefinido', title: 'ViolacoesIndefinido' },
-    { id: 'criterios_total', title: 'WCAG_CriteriosTotal' },
-    { id: 'criterios_automatizaveis', title: 'WCAG_CriteriosAutomatizaveis' },
-    { id: 'cer', title: 'CER' },
     { id: 'taxa_sucesso_acessibilidade', title: 'TaxaSucessoAcessibilidade' }
   ]
 });
@@ -254,7 +261,6 @@ console.log("");
 
 const repos = await readRepositories();
 const results = [];
-const toolErrorsMap = {};
 let totalRodados = 0;
 let totalErros = 0;
 
@@ -305,32 +311,33 @@ for (const repo of repos) {
       violacoes_AA: null,
       violacoes_AAA: null,
       violacoes_indefinido: null,
-      criterios_total: WCAG_TOTAL_CRITERIA,
-      criterios_automatizaveis: WCAG_AUTOMATIZAVEL,
-      cer: null,
       taxa_sucesso_acessibilidade: null
     });
     continue;
   }
 
-  // Agregar resultados (soma de violações)
-  const aggregatedResult = {
-    violacoes: urlResults.reduce((sum, r) => sum + r.violacoes, 0),
-    warnings: urlResults.reduce((sum, r) => sum + r.warnings, 0),
-    nivelA: urlResults.reduce((sum, r) => sum + r.nivelA, 0),
-    nivelAA: urlResults.reduce((sum, r) => sum + r.nivelAA, 0),
-    nivelAAA: urlResults.reduce((sum, r) => sum + r.nivelAAA, 0),
-    indefinido: urlResults.reduce((sum, r) => sum + r.indefinido, 0),
-    erros: [...new Set(urlResults.flatMap(r => r.erros))], // Unique errors
-  };
+    // Agregar resultados (soma de violações)
+    const aggregatedResult = {
+      violacoes: urlResults.reduce((sum, r) => sum + r.violacoes, 0),
+      warnings: urlResults.reduce((sum, r) => sum + r.warnings, 0),
+      nivelA: urlResults.reduce((sum, r) => sum + r.nivelA, 0),
+      nivelAA: urlResults.reduce((sum, r) => sum + r.nivelAA, 0),
+      nivelAAA: urlResults.reduce((sum, r) => sum + r.nivelAAA, 0),
+      indefinido: urlResults.reduce((sum, r) => sum + r.indefinido, 0),
+    };
 
   console.log(`\n✅ Análise agregada concluída (${successCount}/${urlsToAnalyze.length} URLs):`);
   console.log(`   ❌ Violações (total): ${aggregatedResult.violacoes}`);
   console.log(`   ⚠️  Warnings (total): ${aggregatedResult.warnings}`);
   console.log(`   📈 WCAG - A: ${aggregatedResult.nivelA} | AA: ${aggregatedResult.nivelAA} | AAA: ${aggregatedResult.nivelAAA}`);
 
-  toolErrorsMap['AXE'] = new Set(aggregatedResult.erros);
   totalRodados++;
+
+  // Calcula taxa de sucesso simples (inverso da densidade de violações)
+  const totalChecks = aggregatedResult.violacoes + aggregatedResult.warnings;
+  const taxaSucesso = totalChecks > 0 
+    ? (1 - (aggregatedResult.violacoes / totalChecks)).toFixed(4)
+    : 1.0000;
 
   results.push({
     repositorio: repo.repositorio,
@@ -344,27 +351,12 @@ for (const repo of repos) {
     violacoes_AA: aggregatedResult.nivelAA,
     violacoes_AAA: aggregatedResult.nivelAAA,
     violacoes_indefinido: aggregatedResult.indefinido,
-    criterios_total: WCAG_TOTAL_CRITERIA,
-    criterios_automatizaveis: WCAG_AUTOMATIZAVEL,
-    cer: 0,
-    taxa_sucesso_acessibilidade: ((WCAG_AUTOMATIZAVEL - aggregatedResult.violacoes) / WCAG_AUTOMATIZAVEL).toFixed(2)
+    taxa_sucesso_acessibilidade: taxaSucesso
   });
 
   // Pausa entre repositórios
   await new Promise((resolve) => setTimeout(resolve, 2000));
 }
-
-const allErrorsGlobal = new Set();
-Object.values(toolErrorsMap).forEach(set => {
-  set.forEach(err => allErrorsGlobal.add(err));
-});
-
-results.forEach(r => {
-  if (r.status === 'OK' && allErrorsGlobal.size > 0) {
-    const toolSet = toolErrorsMap['AXE'] || new Set();
-    r.cer = (toolSet.size / allErrorsGlobal.size).toFixed(2);
-  }
-});
 
 await saveCsv(results);
 

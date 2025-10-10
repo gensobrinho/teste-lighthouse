@@ -8,6 +8,7 @@
     "lighthouse": "node lighthouse-ci-runner.js",
     "axe": "node axe-ci-runner.js",
     "pa11y": "node pa11y-ci-runner.js",
+    "htmlcs": "node htmlcs-ci-runner.js",
     "tests": "node axe-ci-runner.js",
     "extract-homepages": "node extract-homepages.js",
     "start": "node script.js"

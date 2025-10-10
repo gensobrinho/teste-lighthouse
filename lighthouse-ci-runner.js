@@ -44,6 +44,11 @@ const CONFIG = {
   ],
 };
 
+/**
+* NOTA: Métricas de Cobertura WCAG foram removidas devido a inconsistências metodológicas.
+* Para detalhes, consulte os comentários em axe-ci-runner.js
+*/
+
 // ----------------------
 // Mapeamento de Regras WCAG
 // ----------------------
@@ -409,6 +414,7 @@ async function saveResults(results) {
       { id: "experimental", title: "Violacoes_Experimental" },
       { id: "deprecated", title: "Violacoes_Deprecated" },
       { id: "indefinido", title: "Violacoes_Indefinido" },
+      { id: "taxa_sucesso_acessibilidade", title: "TaxaSucessoAcessibilidade" },
       { id: "performance", title: "Performance_Score" },
       { id: "bestPractices", title: "Best_Practices_Score" },
       { id: "seo", title: "SEO_Score" },
@@ -570,6 +576,10 @@ async function saveResults(results) {
     );
 
     totalRodados++;
+    
+    // Calcula taxa de sucesso simples baseada no score do Lighthouse
+    const taxaSucesso = aggregatedResult.score.toFixed(4);
+
     results.push({
       repositorio: repo.repositorio,
       homepage: repo.homepage,
@@ -587,6 +597,7 @@ async function saveResults(results) {
       experimental: aggregatedResult.experimental,
       deprecated: aggregatedResult.deprecated,
       indefinido: aggregatedResult.indefinido,
+      taxa_sucesso_acessibilidade: taxaSucesso,
       performance: aggregatedResult.performance,
       bestPractices: aggregatedResult.bestPractices,
       seo: aggregatedResult.seo,
