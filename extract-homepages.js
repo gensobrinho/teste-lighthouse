@@ -14,7 +14,11 @@ const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 // ----------------------
 // Configuração de Tokens GitHub
 // ----------------------
-const tokens = ["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","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","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"].filter(Boolean);
+const tokens = [
+  process.env.TOKEN_1,
+  process.env.TOKEN_2,
+  process.env.TOKEN_3,
+].filter(Boolean);
 
 if (tokens.length === 0) {
   console.error("❌ Erro: Nenhum token GitHub configurado!");
