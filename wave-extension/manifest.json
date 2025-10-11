@@ -1,4 +1,12 @@
 {
+  "action": {
+    "default_icon": {
+      "16": "/img/wave16bk.png",
+      "32": "/img/wave32bk.png",
+      "64": "/img/wave64bk.png"
+    },
+    "default_title": "WAVE"
+  },
   "background": {
     "service_worker": "service_worker.js"
   },
@@ -16,6 +24,14 @@
     "http://*/*",
     "https://*/*"
   ],
+  "icons": {
+    "16": "/img/wave16.png",
+    "32": "/img/wave32.png",
+    "48": "/img/wave48.png",
+    "64": "/img/wave64.png",
+    "96": "/img/wave96.png",
+    "128": "/img/wave128.png"
+  },
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAg1TvPIsi4XZOJV2gW8ueKgv+4vvuyMKhVi5mN9pWxxrdZZPX/lzN0t4uXp7/oKao/ss48ofVNSASYmnK9aIJj1uMz/EXWr0MrlKw1/5h67lNiaz+99ksECMPYwjbeO+BvBiGmDlIzTpmvY8ityS73CBZoQkl5b/OCzH76jmpitCgRb4SpVOg76eC4sVWe4vwttxMtR4TzPZAD6yNu6HwBgbDHOTsVWn8RcZaUEwy1qMwzwKs/2NvYyKlJthgG6iil/qHjb6mgLg1OYEpRQF5kQHC0fybDRXLBsCu3QOI5y3u86EBnQloMtS08xfCH2hVvMcRZoGxvao3prGKtD3OaQIDAQAB",
   "manifest_version": 3,
   "name": "WAVE Evaluation Tool",
@@ -35,16 +51,11 @@
       "resources": [
         "img/*",
         "styles/*",
-        "chrome/*",
-        "background.js",
         "inject.js",
         "sidebar.html",
         "wave.min.js",
         "sidebar.min.js"
       ]
     }
-  ],
-  "action": {
-    "default_title": "WAVE"
-  }
+  ]
 }
