@@ -7,9 +7,20 @@ const fetch = require('node-fetch');
 let Sitemapper;
 
 /**
-* NOTA: Métricas de Cobertura WCAG foram removidas devido a inconsistências metodológicas.
-* Para detalhes, consulte os comentários em axe-ci-runner.js
-*/
+ * HTML_CodeSniffer Runner
+ * 
+ * Baseado no repositório oficial: https://github.com/squizlabs/HTML_CodeSniffer
+ * 
+ * MELHORIAS IMPLEMENTADAS:
+ * - Uso correto das constantes HTMLCS.ERROR, HTMLCS.WARNING, HTMLCS.NOTICE
+ * - Classificação correta por níveis WCAG (A, AA, AAA)
+ * - Callbacks adequados para process() conforme documentação
+ * - Tratamento robusto de timeouts e erros
+ * - Log detalhado de erros em errors.log
+ * 
+ * NOTA: Métricas de Cobertura WCAG foram removidas devido a inconsistências metodológicas.
+ * Para detalhes, consulte os comentários em axe-ci-runner.js
+ */
 
 const CONFIG = {
   MAX_URLS_PER_REPO: 10,
@@ -56,107 +67,130 @@ async function loadHTMLCSScript() {
 }
 
 async function runHTMLCS(url, htmlcsScript, standard = CONFIG.WCAG_STANDARD, retry = 0) {
-  console.log(`🚀 Iniciando HTML_CodeSniffer em ${url}`);
-  const startTime = Date.now();
+  console.log(`🚀 Rodando HTML_CodeSniffer em ${url}`);
+  const start = Date.now();
   let browser;
-  
+
   try {
     browser = await puppeteer.launch({
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      timeout: 60000
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--ignore-certificate-errors'
+      ]
     });
 
     const page = await browser.newPage();
     await page.setDefaultNavigationTimeout(CONFIG.PAGE_TIMEOUT);
-    await page.setViewport({ width: 1280, height: 800 });
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: CONFIG.PAGE_TIMEOUT });
-    await page.waitForSelector('body', { timeout: 10000 });
-    await new Promise(r => setTimeout(r, 2000));
-    await page.addScriptTag({ content: htmlcsScript });
-    await page.waitForFunction(() => typeof window.HTMLCS !== 'undefined', { timeout: 10000 });
+    const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: CONFIG.PAGE_TIMEOUT });
 
-    console.log(`   ✅ HTML_CodeSniffer pronto, executando análise...`);
+    if (!response || !response.ok()) throw new Error(`Falha ao carregar página (${response?.status()})`);
+
+    await page.addScriptTag({ content: htmlcsScript });
+    
+    // Aguardar HTMLCS carregar e verificar constantes
+    await page.waitForFunction(() => {
+      return typeof window.HTMLCS !== 'undefined' &&
+             typeof window.HTMLCS.process === 'function' &&
+             typeof window.HTMLCS.ERROR !== 'undefined' &&
+             typeof window.HTMLCS.WARNING !== 'undefined' &&
+             typeof window.HTMLCS.NOTICE !== 'undefined';
+    }, { timeout: 20000 });
 
     const result = await Promise.race([
-      page.evaluate((wcagStandard) => {
-        return new Promise((resolve, reject) => {
-          try {
-            const messages = [];
-            
-            const callback = (msg) => {
-              // Valida se a mensagem existe e tem propriedades válidas
-              if (!msg || typeof msg.type === 'undefined') {
-                return; // Ignora mensagens inválidas
-              }
-              
-              messages.push({
-                type: msg.type,
-                code: msg.code || 'unknown',
-                message: msg.msg || '',
-                element: msg.element ? msg.element.tagName : 'unknown'
-              });
-            };
-            
-            window.HTMLCS.process(wcagStandard, document, callback, (error) => {
-              if (error) {
-                reject(new Error('Erro ao processar: ' + error));
-                return;
-              }
-              
-              const errors = messages.filter(m => m.type === window.HTMLCS.ERROR);
-              const warnings = messages.filter(m => m.type === window.HTMLCS.WARNING);
-              const notices = messages.filter(m => m.type === window.HTMLCS.NOTICE);
-              
-              const classifyLevel = (msg) => {
-                const code = msg.code || '';
-                if (code.includes('WCAG2AAA')) return 'AAA';
-                if (code.includes('WCAG2AA')) return 'AA';
-                if (code.includes('WCAG2A')) return 'A';
-                return 'indefinido';
-              };
-              
-              const levels = { A: 0, AA: 0, AAA: 0, indefinido: 0 };
-              errors.forEach(err => {
-                const level = classifyLevel(err);
-                levels[level]++;
-              });
-              
-              resolve({
-                errors: errors.length,
-                warnings: warnings.length,
-                notices: notices.length,
-                nivelA: levels.A,
-                nivelAA: levels.AA,
-                nivelAAA: levels.AAA,
-                indefinido: levels.indefinido
-              });
+      page.evaluate((standard) => new Promise((resolve, reject) => {
+        const messages = [];
+        const timeout = setTimeout(() => reject(new Error('Timeout interno HTMLCS')), 45000);
+
+        // Callback para cada mensagem
+        const callback = (msg) => {
+          if (msg && msg.type !== undefined) {
+            messages.push({
+              type: msg.type,
+              code: msg.code || '',
+              msg: msg.msg || '',
+              element: msg.element || null
             });
-          } catch (err) {
-            reject(err);
           }
-        });
-      }, standard),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('⏰ Timeout: 90s')), CONFIG.HTMLCS_TIMEOUT)
-      )
+        };
+
+        // Callback de finalização
+        const complete = () => {
+          clearTimeout(timeout);
+          
+          // Usar constantes do HTMLCS para tipos
+          const errors = messages.filter(m => m.type === window.HTMLCS.ERROR);
+          const warnings = messages.filter(m => m.type === window.HTMLCS.WARNING);
+          const notices = messages.filter(m => m.type === window.HTMLCS.NOTICE);
+          
+          // Classificar erros por nível WCAG
+          const classifyLevel = (msg) => {
+            const code = msg.code || '';
+            // Verificar padrões de código WCAG
+            if (code.includes('WCAG2AAA')) return 'AAA';
+            if (code.includes('WCAG2AA')) return 'AA';
+            if (code.includes('WCAG2A')) return 'A';
+            return 'indefinido';
+          };
+          
+          const levels = { A: 0, AA: 0, AAA: 0, indefinido: 0 };
+          errors.forEach(err => {
+            const level = classifyLevel(err);
+            levels[level]++;
+          });
+          
+          resolve({
+            errors: errors.length,
+            warnings: warnings.length,
+            notices: notices.length,
+            nivelA: levels.A,
+            nivelAA: levels.AA,
+            nivelAAA: levels.AAA,
+            indefinido: levels.indefinido,
+            total: messages.length
+          });
+        };
+
+        try {
+          window.HTMLCS.process(standard, document, callback, complete);
+        } catch (err) {
+          clearTimeout(timeout);
+          reject(err);
+        }
+      }), standard),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout externo 60s')), 60000))
     ]);
 
-    await browser.close();
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`   ✅ Análise concluída (${elapsed}s)`);
+    console.log(`   ✅ Concluído (${((Date.now() - start) / 1000).toFixed(2)}s)`);
+    console.log(`      • Erros: ${result.errors}, Avisos: ${result.warnings}, Notificações: ${result.notices}`);
+    console.log(`      • Níveis WCAG: A=${result.nivelA}, AA=${result.nivelAA}, AAA=${result.nivelAAA}`);
     return result;
-    
   } catch (err) {
-    console.error(`   ❌ Erro: ${err.message}`);
-    if (browser) await browser.close().catch(() => {});
+    const errorMsg = err.message || String(err);
+    console.error(`   ❌ ${url} - ${errorMsg}`);
+    
+    // Log detalhado de erro
+    const errorLog = `
+[${ new Date().toISOString()}] ERRO
+URL: ${url}
+Standard: ${standard}
+Retry: ${retry}
+Erro: ${errorMsg}
+Stack: ${err.stack || 'N/A'}
+${'='.repeat(80)}
+`;
+    fs.appendFileSync('errors.log', errorLog);
     
     if (retry < CONFIG.MAX_RETRIES) {
-      console.log(`   🔁 Retentando (${retry + 1}/${CONFIG.MAX_RETRIES})...`);
+      console.log(`   🔁 Tentando novamente (${retry + 1}/${CONFIG.MAX_RETRIES})...`);
       await new Promise(r => setTimeout(r, 3000));
       return runHTMLCS(url, htmlcsScript, standard, retry + 1);
     }
     return null;
+  } finally {
+    if (browser) await browser.close().catch(() => {});
   }
 }
 
