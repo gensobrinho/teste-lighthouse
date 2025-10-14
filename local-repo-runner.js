@@ -53,9 +53,32 @@ const CONFIG = {
 };
 
 // ----------------------
-// Token GitHub (para clonar repos privados se necessário)
+// Configuração de Tokens GitHub
 // ----------------------
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
+const tokens = [
+  process.env.TOKEN_1,
+  process.env.TOKEN_2,
+  process.env.TOKEN_3,
+].filter(Boolean);
+
+// Se não houver tokens nas variáveis de ambiente, usar fallback
+if (tokens.length === 0 && process.env.GITHUB_TOKEN) {
+  tokens.push(process.env.GITHUB_TOKEN);
+}
+
+let tokenIndex = 0;
+let currentToken = tokens.length > 0 ? tokens[0] : "";
+
+function nextToken() {
+  if (tokens.length <= 1) return;
+  tokenIndex = (tokenIndex + 1) % tokens.length;
+  currentToken = tokens[tokenIndex];
+  console.log(`   🔄 Alternando para token ${tokenIndex + 1}/${tokens.length}`);
+}
+
+function getCurrentToken() {
+  return currentToken;
+}
 
 // ----------------------
 // Gerenciamento de Processos
@@ -173,20 +196,46 @@ function extractNumericPort(portString) {
 // ----------------------
 // Clone do Repositório
 // ----------------------
-async function cloneRepository(repoFullName, destPath) {
+async function cloneRepository(repoFullName, destPath, retries = 2) {
   console.log(`\n📦 Clonando ${repoFullName}...`);
-  try {
-    const cloneUrl = `https://github.com/${repoFullName}.git`;
-    execSync(`git clone --depth 1 ${cloneUrl} "${destPath}"`, {
-      stdio: "inherit",
-      timeout: 60000, // 1 minuto
-    });
-    console.log(`   ✓ Repositório clonado`);
-    return true;
-  } catch (err) {
-    console.error(`   ❌ Erro ao clonar: ${err.message}`);
-    return false;
+  
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      // Construir URL de clone com token se disponível
+      let cloneUrl;
+      if (getCurrentToken()) {
+        cloneUrl = `https://${getCurrentToken()}@github.com/${repoFullName}.git`;
+      } else {
+        cloneUrl = `https://github.com/${repoFullName}.git`;
+      }
+      
+      // Executar clone
+      execSync(`git clone --depth 1 ${cloneUrl} "${destPath}"`, {
+        stdio: "pipe", // Não mostrar token no output
+        timeout: 60000, // 1 minuto
+      });
+      
+      console.log(`   ✓ Repositório clonado`);
+      return true;
+    } catch (err) {
+      console.error(`   ⚠️  Tentativa ${attempt + 1}/${retries + 1} falhou: ${err.message}`);
+      
+      // Se houver mais tokens e ainda há tentativas, trocar token
+      if (attempt < retries && tokens.length > 1) {
+        nextToken();
+        console.log(`   🔄 Tentando novamente com outro token...`);
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Pausa de 2s
+      } else if (attempt < retries) {
+        console.log(`   🔄 Tentando novamente...`);
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Pausa de 2s
+      } else {
+        console.error(`   ❌ Falha ao clonar após ${retries + 1} tentativas`);
+        return false;
+      }
+    }
   }
+  
+  return false;
 }
 
 // ----------------------
@@ -542,7 +591,15 @@ async function saveResults(results) {
 // ----------------------
 (async () => {
   console.log("🚀 LOCAL REPOSITORY RUNNER");
-  console.log(`${"=".repeat(80)}\n`);
+  console.log(`${"=".repeat(80)}`);
+  
+  // Log de tokens disponíveis
+  if (tokens.length > 0) {
+    console.log(`🔑 Tokens GitHub configurados: ${tokens.length}`);
+  } else {
+    console.log(`⚠️  Nenhum token GitHub configurado (pode haver rate limits)`);
+  }
+  console.log("");
 
   // Criar diretório temporário
   ensureDir(CONFIG.TEMP_DIR);
