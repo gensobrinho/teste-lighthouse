@@ -14,8 +14,7 @@ const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 // ----------------------
 // Configuração de Tokens GitHub
 // ----------------------
-const tokens = [ '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',
-  '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',
+const tokens = [ TOKEN_1,
 ].filter(Boolean);
 
 if (tokens.length === 0) {

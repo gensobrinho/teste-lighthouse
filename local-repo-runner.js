@@ -148,85 +148,26 @@ function getRunCommand(packageManager, scriptName) {
 }
 
 // ----------------------
-// Buscar Informações do Repositório
+// Extrair Porta Numérica
 // ----------------------
-async function getRepoInfo(repoFullName) {
-  try {
-    const response = await fetch(
-      `https://api.github.com/repos/${repoFullName}/contents/package.json`,
-      {
-        headers: {
-          Authorization: GITHUB_TOKEN ? `token ${GITHUB_TOKEN}` : undefined,
-          "User-Agent": "Local-Repo-Runner",
-        },
-      }
-    );
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-    const packageJsonContent = Buffer.from(data.content, "base64").toString(
-      "utf-8"
-    );
-    const packageJson = JSON.parse(packageJsonContent);
-
-    // Detectar comando e porta (reutilizando lógica do extract-no-homepages.js)
-    const scripts = packageJson.scripts || {};
-    const commandPriority = ["start", "dev", "serve", "start:dev", "develop"];
-
-    let scriptName = null;
-    for (const cmd of commandPriority) {
-      if (scripts[cmd]) {
-        scriptName = cmd;
-        break;
-      }
-    }
-
-    if (!scriptName) {
-      const keys = Object.keys(scripts);
-      scriptName = keys.find((k) => k.includes("start") || k.includes("dev"));
-    }
-
-    // Detectar porta
-    let port = null;
-    if (scriptName && scripts[scriptName]) {
-      const portMatch = scripts[scriptName].match(/port[=:\s]+(\d+)/i);
-      if (portMatch) {
-        port = parseInt(portMatch[1]);
-      }
-    }
-
-    // Porta padrão por framework
-    if (!port) {
-      const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
-      const frameworks = [
-        { deps: ["next"], port: 3000 },
-        { deps: ["react-scripts"], port: 3000 },
-        { deps: ["@vue/cli-service"], port: 8080 },
-        { deps: ["@angular/cli"], port: 4200 },
-        { deps: ["vite"], port: 5173 },
-        { deps: ["gatsby"], port: 8000 },
-      ];
-
-      for (const fw of frameworks) {
-        if (fw.deps.some((d) => deps[d])) {
-          port = fw.port;
-          break;
-        }
-      }
-    }
-
-    return {
-      scriptName: scriptName || "start",
-      port: port || 3000, // Porta padrão fallback
-      packageJson,
-    };
-  } catch (err) {
-    console.error(`   ❌ Erro ao buscar package.json: ${err.message}`);
-    return null;
+function extractNumericPort(portString) {
+  if (!portString || portString === "N/A" || portString === "Porta não identificada") {
+    return 3000; // Porta padrão fallback
   }
+
+  // Se já é um número
+  const numPort = parseInt(portString);
+  if (!isNaN(numPort)) {
+    return numPort;
+  }
+
+  // Se tem formato "3000 (Framework padrão)" ou "8080 (detectado em scripts)"
+  const match = portString.match(/^(\d+)/);
+  if (match) {
+    return parseInt(match[1]);
+  }
+
+  return 3000; // Fallback
 }
 
 // ----------------------
@@ -441,7 +382,8 @@ async function runAccessibilityTools(url, repoName) {
 // ----------------------
 // Processar Repositório Completo
 // ----------------------
-async function processRepository(repoFullName) {
+async function processRepository(repoData) {
+  const repoFullName = repoData.repositorio;
   const repoName = repoFullName.replace("/", "_");
   const repoPath = path.join(CONFIG.TEMP_DIR, repoName);
 
@@ -458,16 +400,25 @@ async function processRepository(repoFullName) {
   let appProcess = null;
 
   try {
-    // 1. Buscar informações do repositório
-    console.log("\n📋 Buscando informações do repositório...");
-    const repoInfo = await getRepoInfo(repoFullName);
-
-    if (!repoInfo) {
-      throw new Error("Repositório não possui package.json ou não é Node.js");
+    // 1. Validar informações do CSV
+    console.log("\n📋 Validando informações do CSV...");
+    
+    if (!repoData.scriptName || repoData.scriptName === "Sem package.json" || 
+        repoData.scriptName === "Sem scripts" || repoData.scriptName === "Comando não identificado") {
+      throw new Error(`Repositório sem script executável: ${repoData.scriptName}`);
     }
 
-    console.log(`   ✓ Script: ${repoInfo.scriptName}`);
-    console.log(`   ✓ Porta: ${repoInfo.port}`);
+    if (repoData.hasPackageJson === "não") {
+      throw new Error("Repositório sem package.json");
+    }
+
+    const scriptName = repoData.scriptName;
+    const port = extractNumericPort(repoData.porta);
+    const packageManager = validatePackageManager(repoData.packageManager);
+
+    console.log(`   ✓ Script: ${scriptName}`);
+    console.log(`   ✓ Porta: ${port}`);
+    console.log(`   ✓ Gerenciador: ${packageManager}`);
 
     // 2. Clonar repositório
     const cloned = await cloneRepository(repoFullName, repoPath);
@@ -475,10 +426,7 @@ async function processRepository(repoFullName) {
       throw new Error("Falha ao clonar repositório");
     }
 
-    // 3. Detectar e instalar dependências
-    const packageManager = detectPackageManager(repoPath);
-    console.log(`   ✓ Gerenciador detectado: ${packageManager}`);
-
+    // 3. Instalar dependências
     const installed = await installDependencies(repoPath, packageManager);
     if (!installed) {
       throw new Error("Falha ao instalar dependências");
@@ -488,8 +436,8 @@ async function processRepository(repoFullName) {
     appProcess = await startApplication(
       repoPath,
       packageManager,
-      repoInfo.scriptName,
-      repoInfo.port
+      scriptName,
+      port
     );
 
     if (!appProcess) {
@@ -499,7 +447,7 @@ async function processRepository(repoFullName) {
     runningProcesses.set(repoName, appProcess.pid);
 
     // 5. Aguardar aplicação ficar pronta
-    const url = `http://localhost:${repoInfo.port}`;
+    const url = `http://localhost:${port}`;
     const isReady = await waitForAppReady(url);
 
     if (!isReady) {
@@ -551,8 +499,10 @@ async function readRepositories() {
         repos.push({
           repositorio: row["Repositorio"] || row["Repositório"],
           estrelas: row["Estrelas"],
-          comandoExecucao: row["Comando_Execucao"],
+          scriptName: row["Script_Name"],
           porta: row["Porta"],
+          packageManager: row["Package_Manager"],
+          hasPackageJson: row["Has_Package_Json"],
         });
       })
       .on("end", () => {
@@ -607,7 +557,7 @@ async function saveResults(results) {
       const repo = repos[i];
       console.log(`\n[${i + 1}/${repos.length}] Processando ${repo.repositorio}`);
 
-      const result = await processRepository(repo.repositorio);
+      const result = await processRepository(repo);
       results.push(result);
 
       // Pausa entre repositórios
