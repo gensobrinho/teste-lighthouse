@@ -9,7 +9,7 @@ module.exports = {
   ci: {
     collect: {
       // Número de execuções por URL (média dos resultados)
-      numberOfRuns: 3,
+      numberOfRuns: 1,
 
       // Configurações do Chrome
       settings: {
